@@ -1,5 +1,3 @@
-## 2018270979 윤아로
-
 import os
 import shutil
 import cv2
