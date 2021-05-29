@@ -76,7 +76,7 @@ train_generator = train_datagen.flow_from_directory(
 valid_datagen = ImageDataGenerator(rescale=1./255)
 valid_geneator = valid_datagen.flow_from_directory(
     valid_path,
-    target_size=(277,277),
+    target_size=(227,227),
     batch_size=128,
     class_mode='categorical')
 
@@ -84,7 +84,7 @@ valid_geneator = valid_datagen.flow_from_directory(
 test_datagen = ImageDataGenerator(rescale=1./255)
 test_generator = test_datagen.flow_from_directory(
     test_path,
-    target_size=(277,277),
+    target_size=(227,227),
     batch_size=128,
     class_mode='categorical')
 
@@ -97,16 +97,16 @@ test_generator = test_datagen.flow_from_directory(
 def AlexNet():
     # 간단한 모델이기 때문에
     model = Sequential()
-    model.input_shape(277,277,3)
+
     # Conv2D(필터의 개수, (커널 사이즈 : 연산량 줄이기 위해),
-    model.add(Conv2D(96, (11,11), strides=4,
+    model.add(Conv2D(96, (11,11), strides=4, input_shape=(227,227,3),
               padding='valid', activation='relu'))  # 사이즈가 줄어드는 valid
     model.add(MaxPooling2D(pool_size=(3,3), strides=2))
     model.add(BatchNormalization())
     # 하나의 싸이클
 
     model.add(Conv2D(256, (5,5), strides=1, padding='same', activation='relu'))     # 패딩이 same이면 input==output 사이즈 동일
-    model.add(MaxPooling2D(pool_size=(3,3), stride=2))  # 위와 동일하게 반복
+    model.add(MaxPooling2D(pool_size=(3,3), strides=2))  # 위와 동일하게 반복
     model.add(BatchNormalization())
 
     model.add(Conv2D(384, (3,3), strides=1, padding='same', activation='relu'))
@@ -130,3 +130,68 @@ model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy
 model.summary()
 
 
+## Details of learning
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
+
+early_stopping = EarlyStopping(monitor='val_loss', patience=5)
+checkpoint_callback = ModelCheckpoint(
+    'D:/GITHUB/ComputerVision/AlexNet/210513/flower_weights.h5',
+    monitor='val_loss',
+    verbose=1,
+    save_best_only=True, mode='min')
+
+reduce_lr_on_plateau = ReduceLROnPlateau(
+    monitor='val_accuracy',  # 평탄해지면 lr을 바꿔서 학습할 수 있도록
+    factor=0.1,     # 얼마만큼 작아질지(0.1씩 줄어듦)
+    patience=5,     # 얼마나 평탄하면 적용?
+    min_lr=0.00001,     # 어디까지 작아질지
+    verbose=1, mode='min')
+
+history = model.fit_generator(
+    train_generator,
+    steps_per_epoch=2162//128,
+    validation_data=valid_geneator,
+    epochs=100,
+    callbacks=[early_stopping, checkpoint_callback, reduce_lr_on_plateau]
+)
+
+fig, loss_acc = plt.subplots()
+acc = loss_acc.twinx()
+
+loss_acc.plot(history.history['loss'], 'y', label='train loss')
+loss_acc.plot(history.history['val_loss'], 'r', label='val loss')
+loss_acc.set_xlabel('epoch')
+loss_acc.set_ylabel('loss')
+loss_acc.legend(loc='upper left')
+
+acc.plot(history.history['accuracy'], 'b', label='train acc')
+acc.plot(history.history['val_accuracy'], 'g', label='val acc')
+acc.set_ylabel('accuracy')
+acc.legend(loc='lower left')
+
+plt.show()
+
+
+scores = model.evaluate_generator(generator=test_generator)
+print("Total Loss : ", scores[0], "\nTotal Accuracy : ", scores[1])
+
+## 결과를 시각화
+image_path = 'D:/GITHUB/ComputerVision/AlexNet/210513/test/sunflower/9610373158_5250bce6ac_n.jpg'
+image = cv2.imread(image_path)
+output = image.copy()
+output = cv2.resize(output, (227, 227))
+output = output.astype('float')/225.0
+output = np.array(output)
+output = np.expand_dims(output, axis=0)
+
+probability = model.predict(output)[0]
+idx = np.argmax(probability)
+
+print(probability, idx)
+
+# from google.colab.patches import cv2_imshow
+
+# label = "{}".format(labels[idx])
+# cv2.putText(image, label, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+
+cv2.imshow('result', image)
